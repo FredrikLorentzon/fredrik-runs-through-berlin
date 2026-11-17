@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fredrik runs through Berlin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;500;700&family=Space+Grotesk:wght@300;500;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+:root {
+  --bg: #030303;
+  --ink: #f3efe8;
+  --muted: rgba(243, 239, 232, 0.56);
+  --faint: rgba(243, 239, 232, 0.16);
+  --hairline: rgba(243, 239, 232, 0.10);
+  --hot: #ff7a1a;
+  --hot-soft: #ffb35c;
+  --panel: rgba(6, 6, 6, 0.52);
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --sans: "Space Grotesk", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+#map { position: fixed; inset: 0; background: var(--bg); }
+#map canvas { outline: none; }
+.vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.45) 82%, rgba(0, 0, 0, 0.85) 100%); }
+.grain { position: fixed; inset: -60%; pointer-events: none; opacity: 0.06; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); animation: grain 0.9s steps(5) infinite; }
+@keyframes grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); } 40% { transform: translate(2%, -4%); } 60% { transform: translate(-4%, -1%); } 80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); } }
+.scanline { position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 3px); }
+
+.hud { position: fixed; pointer-events: none; z-index: 5; }
+.hud * { pointer-events: auto; }
+.label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+
+.brand { top: 28px; left: 32px; }
+.brand h1 { margin: 6px 0 0; font-size: clamp(34px, 5vw, 64px); font-weight: 700; letter-spacing: -0.03em; line-height: 0.92; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8); }
+.brand h1 span { color: var(--hot); text-shadow: 0 0 24px rgba(255, 122, 26, 0.55); }
+
+.clock { top: 28px; right: 32px; text-align: right; }
+.clock .time { font-family: var(--mono); font-weight: 300; font-size: clamp(40px, 6.4vw, 84px); letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 30px rgba(255, 140, 40, 0.35); }
+
+.feed { top: 148px; right: 32px; width: 260px; display: flex; flex-direction: column; gap: 6px; }
+.feed .row { display: grid; grid-template-columns: 14px 1fr auto; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 12px; padding: 7px 10px; border-left: 1px solid var(--faint); background: linear-gradient(90deg, rgba(255, 122, 26, 0.10), transparent 80%); animation: slide 0.6s cubic-bezier(.2, .8, .2, 1); }
+.feed .row:nth-child(n+2) { opacity: 0.55; }
+.feed .row:nth-child(n+3) { opacity: 0.32; }
+.feed .row:nth-child(n+4) { opacity: 0.16; }
+.feed .row .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 10px var(--hot); align-self: center; }
+.feed .row .km { color: var(--ink); }
+.feed .row .meta { color: var(--muted); font-size: 11px; }
+@keyframes slide { from { transform: translateX(18px); opacity: 0; } }
+
+.stats { left: 32px; bottom: 114px; display: flex; gap: 40px; transition: opacity 0.8s; }
+.stat .value { font-family: var(--mono); font-size: clamp(22px, 2.6vw, 34px); font-weight: 500; margin-top: 6px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.stat .value.hot { color: var(--hot); text-shadow: 0 0 18px rgba(255, 122, 26, 0.6); }
+
+.dock { left: 32px; right: 32px; bottom: 38px; display: flex; align-items: center; gap: 14px; }
+.btn { appearance: none; white-space: nowrap; flex-shrink: 0; border: 1px solid var(--faint); background: var(--panel); color: var(--ink); height: 40px; min-width: 40px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: border-color 0.2s, color 0.2s, box-shadow 0.2s; }
+.btn:hover { border-color: rgba(255, 122, 26, 0.7); box-shadow: 0 0 18px rgba(255, 122, 26, 0.25); }
+.btn.on { color: var(--hot-soft); border-color: rgba(255, 122, 26, 0.55); }
+.btn svg { width: 14px; height: 14px; fill: currentColor; }
+.timeline { position: relative; flex: 1; height: 44px; cursor: pointer; touch-action: none; }
+.timeline canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.timeline .fill { position: absolute; left: 0; top: 0; bottom: 0; overflow: hidden; width: 0; }
+.timeline .fill canvas { width: var(--track-width); }
+.timeline .head { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--hot-soft); box-shadow: 0 0 12px 2px rgba(255, 140, 40, 0.8); left: 0; }
+.timeline .ticks { position: absolute; left: 0; right: 0; bottom: -16px; height: 12px; font-family: var(--mono); font-size: 9.5px; color: var(--muted); letter-spacing: 0.08em; }
+.timeline .ticks span { position: absolute; transform: translateX(-50%); }
+
+.center { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 6; text-align: center; }
+.loading { color: var(--hot-soft); animation: breathe 1.6s ease-in-out infinite; transition: opacity 0.5s; }
+.loading.gone { opacity: 0 !important; animation: none; }
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+.finale { position: fixed; left: 32px; right: 32px; bottom: 102px; z-index: 6; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding: 22px 26px; background: linear-gradient(180deg, rgba(3, 3, 3, 0.25), rgba(3, 3, 3, 0.7)); border-top: 1px solid rgba(255, 122, 26, 0.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transform: translateY(14px); transition: opacity 1.2s, transform 1.2s cubic-bezier(.2, .8, .2, 1); pointer-events: none; }
+.finale.show { opacity: 1; transform: none; pointer-events: auto; }
+.finale h2 { margin: 6px 0 0; font-size: clamp(22px, 2.6vw, 34px); letter-spacing: -0.03em; font-weight: 700; }
+.finale h2 span { color: var(--hot); text-shadow: 0 0 22px rgba(255, 122, 26, 0.6); }
+.finale .grid { display: flex; gap: 34px; flex-wrap: wrap; }
+.finale .grid .value { font-family: var(--mono); font-size: clamp(18px, 2vw, 26px); font-weight: 500; margin-top: 6px; white-space: nowrap; }
+.finale .grid .value.hot { color: var(--hot); text-shadow: 0 0 22px rgba(255, 122, 26, 0.6); }
+body.done .stats { opacity: 0; }
+
+.keys { margin-top: 18px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; line-height: 1.9; color: rgba(243, 239, 232, 0.38); text-transform: uppercase; max-width: 300px; }
+.attribution { position: fixed; right: 12px; bottom: 5px; font-family: var(--mono); font-size: 9px; color: rgba(243, 239, 232, 0.38); z-index: 5; }
+.attribution a { color: inherit; }
+
+@media (max-width: 760px) {
+  .brand { top: 18px; left: 16px; }
+  .brand h1 { font-size: 26px; }
+  .brand .label { letter-spacing: 0.14em; font-size: 9.5px; }
+  .clock { top: 18px; right: 16px; }
+  .clock .time { font-size: 32px; margin-top: 14px; }
+  .attribution { font-size: 8px; bottom: 4px; left: 10px; text-align: right; }
+  .feed { display: none; }
+  .stats { left: 16px; right: 16px; bottom: 106px; gap: 18px; justify-content: space-between; }
+  .dock { left: 16px; right: 16px; bottom: 40px; gap: 8px; }
+  .btn.optional, .keys { display: none; }
+  .finale { left: 16px; right: 16px; bottom: 84px; flex-direction: column; align-items: flex-start; gap: 16px; padding: 18px 16px; }
+  .finale .grid { gap: 14px 22px; }
+}
+@media (prefers-reduced-motion: reduce) { .grain { animation: none; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="vignette"></div>
+<div class="scanline"></div>
+<div class="grain"></div>
+
+<div class="hud brand">
+  <div class="label" id="date-range"></div>
+  <h1>Fredrik runs<br><span>through Berlin</span></h1>
+  <div class="keys">Space play or pause<br>R restart &nbsp; S speed &nbsp; O orbit<br>Arrows scrub &nbsp; Right drag to tilt</div>
+</div>
+
+<div class="hud clock">
+  <div class="time" id="clock">0:00:00</div>
+</div>
+
+<div class="hud feed" id="feed"></div>
+
+<div class="hud stats">
+  <div class="stat"><div class="label">On course</div><div class="value hot" id="stat-running">0</div></div>
+  <div class="stat"><div class="label">Finished</div><div class="value" id="stat-finished">0</div></div>
+  <div class="stat"><div class="label">Kilometres</div><div class="value" id="stat-km">0</div></div>
+</div>
+
+<div class="hud dock">
+  <button class="btn" id="btn-play" aria-label="Pause"><svg viewBox="0 0 16 16" id="icon-play"><path d="M4 2h3v12H4zM9 2h3v12H9z"/></svg></button>
+  <button class="btn" id="btn-restart" aria-label="Restart"><svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 1 1-5.7 7.9l1.9-.6A4 4 0 1 0 8 4v2.5L4.5 3.2 8 0z"/></svg></button>
+  <div class="timeline" id="timeline">
+    <canvas id="track-dim"></canvas>
+    <div class="fill" id="track-fill"><canvas id="track-hot"></canvas></div>
+    <div class="head" id="track-head"></div>
+    <div class="ticks" id="ticks"></div>
+  </div>
+  <button class="btn optional" id="btn-speed">1 min/s</button>
+  <button class="btn optional on" id="btn-orbit">Orbit</button>
+</div>
+
+<div class="center"><div class="loading label" id="loading">Loading Berlin</div></div>
+
+<div class="finale" id="finale">
+  <div>
+    <div class="label">All runners home</div>
+    <h2>That was <span id="fin-years"></span> of running.</h2>
+  </div>
+  <div class="grid">
+    <div><div class="label">Runs</div><div class="value hot" id="fin-runs"></div></div>
+    <div><div class="label">Kilometres</div><div class="value" id="fin-km"></div></div>
+    <div><div class="label">Hours</div><div class="value" id="fin-hours"></div></div>
+    <div><div class="label">Longest</div><div class="value" id="fin-longest"></div></div>
+    <div><div class="label">Median finish</div><div class="value" id="fin-median"></div></div>
+    <div><div class="label">Last one home</div><div class="value" id="fin-last"></div></div>
+  </div>
+  <button class="btn on" id="btn-replay">Run it again</button>
+</div>
+
+<div class="attribution">Runs recorded with Polar &nbsp; Map <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/deck.gl@9.4.1/dist.min.js"></script>
+<script id="run-data" type="application/json">__RUN_DATA__</script>
+<script>
+const {MapboxOverlay, TripsLayer, IconLayer, ScatterplotLayer} = deck;
+
+const DATA = JSON.parse(document.getElementById("run-data").textContent);
+const SCALE = DATA.scale;
+const BASE_SPEED = 60;
+const SPEEDS = [1, 2, 5];
+const PITCH = 28;
+const ORBIT_DEG_PER_SEC = 0.9;
+const COMET_SECONDS = 540;
+const BURST_SECONDS = 360;
+const START_FLASH_SECONDS = 150;
+const MAX_FRAME_SECONDS = 1;
+const MAP_WAIT_MS = 5000;
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const ADDITIVE = {
+  blend: true,
+  blendColorOperation: "add",
+  blendColorSrcFactor: "src-alpha",
+  blendColorDstFactor: "one",
+  blendAlphaOperation: "add",
+  blendAlphaSrcFactor: "one",
+  blendAlphaDstFactor: "one",
+  depthWriteEnabled: false,
+  depthCompare: "always"
+};
+const FLAT = {depthWriteEnabled: false, depthCompare: "always"};
+
+const GREY = {
+  land: "#121212",
+  urban: "#161616",
+  park: "#262626",
+  wood: "#2b2b2b",
+  water: "#000000",
+  shore: "#3a3a3a",
+  building: "#1b1b1b",
+  rail: "#3a3a3a",
+  minor: "#2c2c2c",
+  mid: "#424242",
+  major: "#5a5a5a",
+  motorway: "#6e6e6e",
+  label: "#8f8f8f",
+  waterLabel: "#5c5c5c"
+};
+
+const zoomed = stops => ["interpolate", ["exponential", 1.5], ["zoom"], ...stops];
+const ofClass = (...classes) => ["in", ["get", "class"], ["literal", classes]];
+const localName = ["coalesce", ["get", "name:de"], ["get", "name"]];
+
+const MAP_STYLE = {
+  version: 8,
+  glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+  sources: {omt: {type: "vector", url: "https://tiles.openfreemap.org/planet"}},
+  layers: [
+    {id: "land", type: "background", paint: {"background-color": GREY.land}},
+    {id: "urban", type: "fill", source: "omt", "source-layer": "landuse", filter: ofClass("residential", "commercial", "industrial", "retail", "railway"), paint: {"fill-color": GREY.urban}},
+    {id: "grass", type: "fill", source: "omt", "source-layer": "landcover", filter: ofClass("grass", "farmland", "wetland", "sand"), paint: {"fill-color": GREY.park}},
+    {id: "wood", type: "fill", source: "omt", "source-layer": "landcover", filter: ofClass("wood"), paint: {"fill-color": GREY.wood}},
+    {id: "green-landuse", type: "fill", source: "omt", "source-layer": "landuse", filter: ofClass("cemetery", "pitch", "playground", "stadium", "zoo"), paint: {"fill-color": GREY.park}},
+    {id: "park", type: "fill", source: "omt", "source-layer": "park", paint: {"fill-color": GREY.park, "fill-opacity": 0.8}},
+    {id: "water", type: "fill", source: "omt", "source-layer": "water", paint: {"fill-color": GREY.water}},
+    {id: "shore", type: "line", source: "omt", "source-layer": "water", paint: {"line-color": GREY.shore, "line-width": zoomed([9, 0.4, 15, 1.4])}},
+    {id: "waterway", type: "line", source: "omt", "source-layer": "waterway", paint: {"line-color": GREY.water, "line-width": zoomed([9, 0.6, 15, 3])}},
+    {id: "building", type: "fill", source: "omt", "source-layer": "building", minzoom: 13, paint: {"fill-color": GREY.building}},
+    {id: "rail", type: "line", source: "omt", "source-layer": "transportation", filter: ofClass("rail", "transit"), paint: {"line-color": GREY.rail, "line-width": zoomed([10, 0.5, 16, 1.6]), "line-dasharray": [3, 2]}},
+    {id: "road-minor", type: "line", source: "omt", "source-layer": "transportation", minzoom: 12, filter: ofClass("minor", "service", "track", "path"), layout: {"line-cap": "round", "line-join": "round"}, paint: {"line-color": GREY.minor, "line-width": zoomed([12, 0.4, 16, 2.4])}},
+    {id: "road-mid", type: "line", source: "omt", "source-layer": "transportation", filter: ofClass("tertiary", "secondary"), layout: {"line-cap": "round", "line-join": "round"}, paint: {"line-color": GREY.mid, "line-width": zoomed([9, 0.4, 16, 5])}},
+    {id: "road-major", type: "line", source: "omt", "source-layer": "transportation", filter: ofClass("primary", "trunk"), layout: {"line-cap": "round", "line-join": "round"}, paint: {"line-color": GREY.major, "line-width": zoomed([8, 0.6, 16, 7])}},
+    {id: "road-motorway", type: "line", source: "omt", "source-layer": "transportation", filter: ofClass("motorway"), layout: {"line-cap": "round", "line-join": "round"}, paint: {"line-color": GREY.motorway, "line-width": zoomed([8, 0.8, 16, 8])}},
+    {id: "water-label", type: "symbol", source: "omt", "source-layer": "water_name", layout: {"text-field": localName, "text-font": ["Noto Sans Italic"], "text-size": 11, "text-letter-spacing": 0.08}, paint: {"text-color": GREY.waterLabel, "text-halo-color": "#000000", "text-halo-width": 1}},
+    {id: "place-label", type: "symbol", source: "omt", "source-layer": "place", filter: ofClass("city", "town", "suburb", "quarter", "village"), layout: {"text-field": localName, "text-font": ["Noto Sans Regular"], "text-size": zoomed([9, 9, 14, 13]), "text-transform": "uppercase", "text-letter-spacing": 0.16, "text-max-width": 8}, paint: {"text-color": GREY.label, "text-halo-color": "#000000", "text-halo-width": 1.2}}
+  ]
+};
+
+function haversineKm(a, b) {
+  const toRad = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * toRad;
+  const dLon = (b[0] - a[0]) * toRad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * toRad) * Math.cos(b[1] * toRad) * Math.sin(dLon / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+
+function decodeRun(raw, index) {
+  const n = raw.track.length / 3;
+  const path = new Array(n);
+  const ts = new Array(n);
+  const cum = new Float64Array(n);
+  let t = 0, lat = 0, lon = 0;
+  for (let k = 0; k < n; k++) {
+    t += raw.track[3 * k];
+    lat += raw.track[3 * k + 1];
+    lon += raw.track[3 * k + 2];
+    path[k] = [lon / SCALE, lat / SCALE];
+    ts[k] = t;
+    if (k > 0) cum[k] = cum[k - 1] + haversineKm(path[k - 1], path[k]);
+  }
+  const factor = cum[n - 1] > 0 ? raw.km / cum[n - 1] : 1;
+  for (let k = 0; k < n; k++) cum[k] *= factor;
+  return {index, date: raw.date, km: raw.km, path, ts, cum, duration: t, start: path[0], end: path[n - 1]};
+}
+
+const runs = DATA.runs.map(decodeRun);
+const byDuration = [...runs].sort((a, b) => a.duration - b.duration);
+const durations = byDuration.map(r => r.duration);
+const MAX_TIME = durations[durations.length - 1];
+const TOTAL_KM = runs.reduce((s, r) => s + r.km, 0);
+
+function upperBound(values, x) {
+  let lo = 0, hi = values.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (values[mid] <= x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+function locate(run, time) {
+  const ts = run.ts;
+  let lo = 0, hi = ts.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ts[mid] <= time) lo = mid; else hi = mid; }
+  const span = ts[hi] - ts[lo];
+  const f = span > 0 ? Math.min(1, Math.max(0, (time - ts[lo]) / span)) : 0;
+  const a = run.path[lo], b = run.path[hi];
+  return {position: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], km: run.cum[lo] + (run.cum[hi] - run.cum[lo]) * f};
+}
+
+function formatClock(seconds) {
+  const s = Math.floor(seconds);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
+
+function formatShort(seconds) {
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+
+function formatMonth(iso) {
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("en-US", {month: "short", year: "numeric"});
+}
+
+const fmt = new Intl.NumberFormat("en-US", {maximumFractionDigits: 0});
+
+function makeSprite() {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.0, "rgba(255,240,210,1)");
+  g.addColorStop(0.12, "rgba(255,190,100,0.8)");
+  g.addColorStop(0.3, "rgba(255,120,30,0.32)");
+  g.addColorStop(0.6, "rgba(255,80,0,0.07)");
+  g.addColorStop(1.0, "rgba(255,60,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return canvas.toDataURL();
+}
+
+const SPRITE = makeSprite();
+const SPRITE_MAPPING = {glow: {x: 0, y: 0, width: 128, height: 128, anchorY: 64, mask: false}};
+
+const START_VIEW = {center: [13.37686, 52.46471], zoom: 12.058, referenceWidth: 2000};
+
+function initialView() {
+  return {center: START_VIEW.center, zoom: START_VIEW.zoom + Math.log2(window.innerWidth / START_VIEW.referenceWidth)};
+}
+
+const home = initialView();
+
+const state = {
+  simTime: 0,
+  playing: false,
+  started: false,
+  speedIndex: 0,
+  orbit: !REDUCED_MOTION,
+  finaleShown: false,
+  lastFrame: performance.now(),
+  lastFeedIndex: -1,
+  scrubbing: false,
+  anchorReal: 0,
+  anchorSim: 0,
+  lastWritten: 0,
+  firstFrame: null
+};
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: MAP_STYLE,
+  center: home.center,
+  zoom: home.zoom,
+  pitch: PITCH,
+  bearing: 0,
+  maxPitch: 70,
+  minZoom: 8,
+  maxZoom: 17,
+  attributionControl: false,
+  fadeDuration: 0
+});
+
+const overlay = new MapboxOverlay({interleaved: true, layers: []});
+map.addControl(overlay);
+function orbitStep(dt) {
+  const bearing = map.getBearing() + dt * ORBIT_DEG_PER_SEC;
+  const transform = map.transform;
+  if (transform && typeof transform.setBearing === "function") {
+    transform.setBearing(bearing);
+    map.triggerRepaint();
+  } else if (!map.isZooming()) {
+    map.setBearing(bearing);
+  }
+}
+
+function trailLayers(t) {
+  const common = {data: runs, getPath: d => d.path, getTimestamps: d => d.ts, currentTime: t, widthUnits: "pixels", capRounded: true, jointRounded: true, parameters: ADDITIVE};
+  return [
+    new TripsLayer({...common, id: "trail-glow", getColor: [255, 90, 10, 9], getWidth: 9, trailLength: 1e7, fadeTrail: false}),
+    new TripsLayer({...common, id: "trail-core", getColor: [255, 118, 34, 46], getWidth: 1.4, trailLength: 1e7, fadeTrail: false}),
+    new TripsLayer({...common, id: "comet-glow", getColor: [255, 120, 30, 110], getWidth: 12, trailLength: COMET_SECONDS, fadeTrail: true}),
+    new TripsLayer({...common, id: "comet-core", getColor: [255, 214, 150, 255], getWidth: 2.4, trailLength: COMET_SECONDS * 0.7, fadeTrail: true})
+  ];
+}
+
+function spriteLayer(id, data) {
+  return new IconLayer({
+    id, data, iconAtlas: SPRITE, iconMapping: SPRITE_MAPPING, getIcon: () => "glow",
+    getPosition: d => d.position, getSize: d => d.size, getColor: d => [255, 255, 255, d.alpha],
+    sizeUnits: "pixels", billboard: true, alphaCutoff: 0.001, parameters: ADDITIVE
+  });
+}
+
+function dotLayer(data) {
+  return new ScatterplotLayer({
+    id: "dots", data, getPosition: d => d.position, billboard: true,
+    radiusUnits: "pixels", getRadius: 2.6, getFillColor: [255, 246, 232, 255],
+    stroked: true, lineWidthUnits: "pixels", getLineWidth: 1.2, getLineColor: [255, 112, 20, 255],
+    parameters: FLAT
+  });
+}
+
+function buildFrame(now) {
+  const t = state.simTime;
+  const heads = [];
+  const bursts = [];
+  let kmDone = 0;
+  let running = 0;
+  const pulse = 0.8 + 0.2 * Math.sin(now / 160);
+  for (const run of runs) {
+    if (!state.started) {
+      heads.push({position: run.start, size: 16 * pulse, alpha: 140});
+      continue;
+    }
+    if (t < run.duration) {
+      const here = locate(run, t);
+      kmDone += here.km;
+      running += 1;
+      heads.push({position: here.position, size: 18, alpha: 220});
+    } else {
+      kmDone += run.km;
+      const age = (t - run.duration) / BURST_SECONDS;
+      if (age < 1) bursts.push({position: run.end, size: 14 + 80 * Math.sqrt(age), alpha: 230 * (1 - age) ** 2});
+    }
+  }
+  if (state.started && t < START_FLASH_SECONDS) {
+    const age = t / START_FLASH_SECONDS;
+    for (const run of runs) bursts.push({position: run.start, size: 16 + 70 * Math.sqrt(age), alpha: 40 * (1 - age) ** 2});
+  }
+  const layers = [];
+  if (state.started) layers.push(...trailLayers(t));
+  layers.push(spriteLayer("bursts", bursts), spriteLayer("heads", heads), dotLayer(heads));
+  return {layers, kmDone, running};
+}
+
+const el = id => document.getElementById(id);
+const ui = {
+  clock: el("clock"), running: el("stat-running"), finished: el("stat-finished"), km: el("stat-km"),
+  feed: el("feed"), fill: el("track-fill"), head: el("track-head"), play: el("btn-play"), speed: el("btn-speed"),
+  orbit: el("btn-orbit"), finale: el("finale")
+};
+
+const PLAY_ICON = '<path d="M4 2l10 6-10 6z"/>';
+const PAUSE_ICON = '<path d="M4 2h3v12H4zM9 2h3v12H9z"/>';
+
+function reanchor() {
+  state.anchorReal = performance.now();
+  state.anchorSim = state.simTime;
+  state.lastWritten = state.simTime;
+}
+
+function setPlaying(value) {
+  reanchor();
+  state.playing = value;
+  el("icon-play").innerHTML = value ? PAUSE_ICON : PLAY_ICON;
+  ui.play.setAttribute("aria-label", value ? "Pause" : "Play");
+}
+
+function setOrbit(value) {
+  state.orbit = value;
+  ui.orbit.classList.toggle("on", value);
+}
+
+function setSpeed(index) {
+  reanchor();
+  state.speedIndex = index;
+  const s = SPEEDS[index];
+  ui.speed.textContent = `${s} min/s`;
+}
+
+function updateFeed() {
+  const finished = upperBound(durations, state.simTime);
+  if (finished === state.lastFeedIndex) return;
+  const grew = finished > state.lastFeedIndex;
+  state.lastFeedIndex = finished;
+  const recent = byDuration.slice(Math.max(0, finished - 4), finished).reverse();
+  ui.feed.innerHTML = recent.map((r, i) => `<div class="row" style="${i === 0 && grew ? "" : "animation:none"}"><span class="dot"></span><span class="km">${r.km.toFixed(1)} km <span class="meta">${formatMonth(r.date)}</span></span><span class="meta">${formatClock(r.duration)}</span></div>`).join("");
+}
+
+function updateHud(frame) {
+  const t = state.simTime;
+  ui.clock.textContent = formatClock(t);
+  ui.running.textContent = state.started ? frame.running : runs.length;
+  ui.finished.textContent = state.started ? runs.length - frame.running : 0;
+  ui.km.textContent = fmt.format(frame.kmDone);
+  const p = t / MAX_TIME;
+  ui.fill.style.width = `${p * 100}%`;
+  ui.head.style.left = `${p * 100}%`;
+  if (state.started) updateFeed();
+}
+
+function drawTimeline() {
+  const wrap = el("timeline");
+  const w = wrap.clientWidth, h = wrap.clientHeight, dpr = window.devicePixelRatio || 1;
+  wrap.style.setProperty("--track-width", `${w}px`);
+  const bins = Math.max(60, Math.floor(w / 3));
+  const values = [];
+  for (let i = 0; i < bins; i++) values.push(runs.length - upperBound(durations, (i / (bins - 1)) * MAX_TIME));
+  for (const [id, hot] of [["track-dim", false], ["track-hot", true]]) {
+    const c = el(id);
+    c.width = w * dpr; c.height = h * dpr;
+    const ctx = c.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, hot ? "rgba(255,150,60,0.95)" : "rgba(243,239,232,0.20)");
+    grad.addColorStop(1, hot ? "rgba(255,90,10,0.15)" : "rgba(243,239,232,0.03)");
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    values.forEach((v, i) => ctx.lineTo((i / (bins - 1)) * w, h - (v / runs.length) * (h - 4)));
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.fillStyle = hot ? "rgba(255,180,90,0.9)" : "rgba(243,239,232,0.22)";
+    ctx.fillRect(0, h - 1, w, 1);
+  }
+  const ticks = [];
+  const step = MAX_TIME > 3 * 3600 ? 3600 : 1800;
+  for (let s = step; s < MAX_TIME; s += step) ticks.push(`<span style="left:${(s / MAX_TIME) * 100}%">${formatShort(s)}</span>`);
+  el("ticks").innerHTML = ticks.join("");
+}
+
+function begin() {
+  if (state.started) return;
+  state.started = true;
+  el("loading").classList.add("gone");
+  setPlaying(true);
+}
+
+function scrubTo(clientX) {
+  const rect = el("timeline").getBoundingClientRect();
+  const p = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  begin();
+  state.simTime = p * MAX_TIME;
+  hideFinale();
+}
+
+function hideFinale() {
+  if (state.simTime < MAX_TIME) { state.finaleShown = false; ui.finale.classList.remove("show"); document.body.classList.remove("done"); }
+}
+
+function restart() {
+  begin();
+  state.simTime = 0;
+  state.lastFeedIndex = -1;
+  hideFinale();
+  setPlaying(true);
+}
+
+function showFinale() {
+  if (state.finaleShown || state.simTime < MAX_TIME) return;
+  state.finaleShown = true;
+  ui.finale.classList.add("show");
+  document.body.classList.add("done");
+}
+
+function waitForMap(now) {
+  if (state.firstFrame === null) state.firstFrame = now;
+  const ready = map.isStyleLoaded() && map.areTilesLoaded();
+  if (ready || now - state.firstFrame > MAP_WAIT_MS) begin();
+}
+
+function tick(now) {
+  const dt = Math.min(MAX_FRAME_SECONDS, (now - state.lastFrame) / 1000);
+  state.lastFrame = now;
+  if (!state.started) waitForMap(now);
+  if (state.started && state.playing && !state.scrubbing) {
+    if (state.simTime !== state.lastWritten) reanchor();
+    const elapsed = Math.max(0, now - state.anchorReal) / 1000;
+    state.simTime = Math.min(MAX_TIME, state.anchorSim + elapsed * BASE_SPEED * SPEEDS[state.speedIndex]);
+    state.lastWritten = state.simTime;
+    if (state.simTime >= MAX_TIME) { setPlaying(false); setTimeout(showFinale, 900); }
+  }
+  if (state.orbit && state.started) orbitStep(dt);
+  const frame = buildFrame(now);
+  overlay.setProps({layers: frame.layers});
+  updateHud(frame);
+  requestAnimationFrame(tick);
+}
+
+function initText() {
+  const first = runs.reduce((a, r) => (r.date < a ? r.date : a), runs[0].date);
+  const last = runs.reduce((a, r) => (r.date > a ? r.date : a), runs[0].date);
+  const hours = runs.reduce((s, r) => s + r.duration, 0) / 3600;
+  const years = (new Date(last) - new Date(first)) / (365.25 * 86400000);
+  el("date-range").textContent = `${runs.length} runs, ${formatMonth(first)} to ${formatMonth(last)}`;
+  el("fin-runs").textContent = runs.length;
+  el("fin-km").textContent = fmt.format(TOTAL_KM);
+  el("fin-hours").textContent = fmt.format(hours);
+  el("fin-longest").textContent = `${Math.max(...runs.map(r => r.km)).toFixed(1)} km`;
+  el("fin-median").textContent = formatShort(durations[Math.floor(durations.length / 2)]);
+  el("fin-last").textContent = formatClock(MAX_TIME);
+  el("fin-years").textContent = years >= 1.5 ? `${Math.round(years)} years` : `${Math.round(years * 12)} months`;
+}
+
+function bindControls() {
+  ui.play.addEventListener("click", () => { begin(); if (state.simTime >= MAX_TIME) restart(); else setPlaying(!state.playing); });
+  el("btn-restart").addEventListener("click", restart);
+  el("btn-replay").addEventListener("click", restart);
+  ui.speed.addEventListener("click", () => setSpeed((state.speedIndex + 1) % SPEEDS.length));
+  ui.orbit.addEventListener("click", () => setOrbit(!state.orbit));
+  const timeline = el("timeline");
+  timeline.addEventListener("pointerdown", e => { state.scrubbing = true; timeline.setPointerCapture(e.pointerId); scrubTo(e.clientX); });
+  timeline.addEventListener("pointermove", e => { if (state.scrubbing) scrubTo(e.clientX); });
+  const release = () => { state.scrubbing = false; };
+  timeline.addEventListener("pointerup", release);
+  timeline.addEventListener("pointercancel", release);
+  window.addEventListener("keydown", e => {
+    if (e.code === "Space") { e.preventDefault(); ui.play.click(); }
+    else if (e.key === "r" || e.key === "R") restart();
+    else if (e.key === "o" || e.key === "O") setOrbit(!state.orbit);
+    else if (e.key === "s" || e.key === "S") setSpeed((state.speedIndex + 1) % SPEEDS.length);
+    else if (e.key === "ArrowRight") { begin(); state.simTime = Math.min(MAX_TIME, state.simTime + 300); }
+    else if (e.key === "ArrowLeft") { begin(); state.simTime = Math.max(0, state.simTime - 300); hideFinale(); }
+  });
+  window.addEventListener("resize", drawTimeline);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) reanchor(); });
+}
+
+initText();
+bindControls();
+setSpeed(0);
+setOrbit(state.orbit);
+setPlaying(false);
+drawTimeline();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
