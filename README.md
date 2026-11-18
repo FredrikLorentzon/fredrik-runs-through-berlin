@@ -9,22 +9,28 @@ An animated map of every run recorded in Berlin between December 2022 and Novemb
 | `site/index.html` | The finished page with the run tracks embedded. This folder is what gets deployed. |
 | `src/template.html` | Page source with a placeholder for the run data. |
 | `data/runs.json` | Compact Berlin run tracks extracted from the export. |
-| `scripts/parse_runs.py` | Reads a Strava bulk export and writes `data/runs.json`. |
-| `scripts/build_page.py` | Embeds `data/runs.json` into the template and writes `site/index.html`. |
+| `src/bin/parse_runs/` | Rust tool that reads a Strava bulk export and writes `data/runs.json`. It reads TCX, GPX and FIT activity files, plain or gzipped. |
+| `src/bin/build_page.rs` | Rust tool that embeds `data/runs.json` into the template and writes `site/index.html`. |
 
 ## Rebuild
 
-Unzip the Strava bulk export into a folder outside the repository, then run:
+The build tools need Rust 1.88 or later. Unzip the Strava bulk export into a folder outside the repository, then run:
 
 ```bash
-uv run python scripts/parse_runs.py /path/to/export data/runs.json
+cargo run --release --bin parse_runs -- /path/to/export data/runs.json
 ```
 
 ```bash
-uv run python scripts/build_page.py src/template.html data/runs.json site/index.html
+cargo run --release --bin build_page -- src/template.html data/runs.json site/index.html
 ```
 
-A run counts as a Berlin run when it starts inside the Berlin bounding box and at least 90 percent of its points stay inside that box. Runs without GPS are skipped.
+A run counts as a Berlin run when it starts inside the Berlin bounding box and at least 90 percent of its points stay inside that box. The box is `BERLIN_BOUNDS` in `src/bin/parse_runs/main.rs`. Runs without GPS are skipped.
+
+The unit tests of both tools run with:
+
+```bash
+cargo test
+```
 
 ## Preview
 
