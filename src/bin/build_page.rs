@@ -1,7 +1,8 @@
 //! Inject the compact run tracks into the HTML template to produce a single page.
 
 use std::fs;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -30,13 +31,21 @@ fn embed(template: &str, data: &str) -> Result<String, String> {
     Ok(template.replacen(PLACEHOLDER, data, 1))
 }
 
+/// Write a file, creating its folder first when it is missing.
+fn write_file(path: &Path, contents: &str) -> io::Result<()> {
+    if let Some(folder) = path.parent() {
+        fs::create_dir_all(folder)?;
+    }
+    fs::write(path, contents)
+}
+
 /// Read the template and the data, embed one in the other and write the page.
 fn run(args: &Args) -> Result<(), String> {
     let read = |path: &PathBuf| {
         fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))
     };
     let page = embed(&read(&args.template)?, &read(&args.data)?)?;
-    fs::write(&args.output, page).map_err(|error| format!("{}: {error}", args.output.display()))
+    write_file(&args.output, &page).map_err(|error| format!("{}: {error}", args.output.display()))
 }
 
 /// Write the template with the run data embedded in place of the placeholder.
@@ -68,6 +77,16 @@ mod tests {
             embed("<a></a>", "{}").unwrap_err(),
             "template has no data placeholder"
         );
+    }
+
+    /// The page lands in a folder that does not exist yet.
+    #[test]
+    fn write_file_creates_missing_folders() {
+        let root = std::env::temp_dir().join(format!("build_page_test_{}", std::process::id()));
+        let page = root.join("site").join("index.html");
+        write_file(&page, "<html></html>").unwrap();
+        assert_eq!(fs::read_to_string(&page).unwrap(), "<html></html>");
+        fs::remove_dir_all(&root).unwrap();
     }
 
     /// Data that could close the script element is rejected.

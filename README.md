@@ -2,19 +2,33 @@
 
 An animated map of every run recorded in Berlin between December 2022 and November 2026. All runs start at the same moment, and one second of playback equals one minute of real running. Each runner glows orange on a black and white map of the city, and the streets run most often build up to white.
 
+The repository holds the page source and the build tools, but no run data. To build the page, request your own archive from Strava and run the two tools on it.
+
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `site/index.html` | The finished page with the run tracks embedded. This folder is what gets deployed. |
 | `src/template.html` | Page source with a placeholder for the run data. |
-| `data/runs.json` | Compact Berlin run tracks extracted from the export. |
-| `src/bin/parse_runs/` | Rust tool that reads a Strava bulk export and writes `data/runs.json`. It reads TCX, GPX and FIT activity files, plain or gzipped. |
+| `src/bin/parse_runs/` | Rust tool that reads a Strava archive and writes `data/runs.json`. It reads TCX, GPX and FIT activity files, plain or gzipped. |
 | `src/bin/build_page.rs` | Rust tool that embeds `data/runs.json` into the template and writes `site/index.html`. |
+| `data/runs.json` | Compact Berlin run tracks extracted from the archive. Written by `parse_runs` and kept out of the repository. |
+| `site/index.html` | The finished page with the run tracks embedded. Written by `build_page` and kept out of the repository. The `site` folder is what gets deployed. |
 
-## Rebuild
+## Get your Strava archive
 
-The build tools need Rust 1.88 or later. Unzip the Strava bulk export into a folder outside the repository, then run:
+Strava sends the full account archive by email. The request works on the Strava website only, not in the app.
+
+1. Log in at strava.com.
+2. Hover over your name in the upper right corner, choose Settings and open the My Account tab on the left.
+3. Under Download your account, select Get Started.
+4. On the next page, select Request download.
+5. Wait for the email with the download link. It goes to the email address of your Strava account and can take a few hours to arrive.
+
+The archive is a zip file named `export_<number>.zip`. Unzip it into a folder outside the repository. The tools read `activities.csv` and the activity files in the `activities` folder and ignore the rest of the archive.
+
+## Build
+
+The build tools need Rust 1.88 or later. With the archive unzipped at `/path/to/export`, run:
 
 ```bash
 cargo run --release --bin parse_runs -- /path/to/export data/runs.json
@@ -24,7 +38,7 @@ cargo run --release --bin parse_runs -- /path/to/export data/runs.json
 cargo run --release --bin build_page -- src/template.html data/runs.json site/index.html
 ```
 
-A run counts as a Berlin run when it starts inside the Berlin bounding box and at least 90 percent of its points stay inside that box. The box is `BERLIN_BOUNDS` in `src/bin/parse_runs/main.rs`. Runs without GPS are skipped.
+Both tools create the `data` and `site` folders when they are missing. A run counts as a Berlin run when it starts inside the Berlin bounding box and at least 90 percent of its points stay inside that box. The box is `BERLIN_BOUNDS` in `src/bin/parse_runs/main.rs`. Runs without GPS are skipped.
 
 The unit tests of both tools run with:
 
@@ -46,7 +60,7 @@ Deploy with Netlify Drop. Open app.netlify.com/drop, drag the `site` folder onto
 
 ## Privacy
 
-`data/runs.json` and `site/index.html` contain the GPS tracks of every run. Anyone who can open the page can see where the runs start and end.
+`data/runs.json` and `site/index.html` contain the GPS tracks of every run, which is why both stay out of the repository. Deploying the page publishes them. Anyone who can open the page can see where the runs start and end.
 
 ## Credits
 

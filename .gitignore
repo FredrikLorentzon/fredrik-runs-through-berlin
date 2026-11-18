@@ -1,3 +1,5 @@
+/data/
+/site/
 target/
 .DS_Store
 .claude/

@@ -5,6 +5,7 @@ mod track;
 
 use std::error::Error;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -136,6 +137,14 @@ fn calendar_date(text: &str) -> Result<String, Box<dyn Error>> {
     Ok(moment.format("%Y-%m-%d").to_string())
 }
 
+/// Write a file, creating its folder first when it is missing.
+fn write_file(path: &Path, contents: &str) -> io::Result<()> {
+    if let Some(folder) = path.parent() {
+        fs::create_dir_all(folder)?;
+    }
+    fs::write(path, contents)
+}
+
 /// Parse every run, keep the Berlin ones and write the compact track file.
 fn run(args: &Args) -> Result<(), Box<dyn Error>> {
     let mut tracks = Vec::new();
@@ -165,7 +174,7 @@ fn run(args: &Args) -> Result<(), Box<dyn Error>> {
         scale: COORD_SCALE,
         runs: &tracks,
     })?;
-    fs::write(&args.output, payload)
+    write_file(&args.output, &payload)
         .map_err(|error| format!("{}: {error}", args.output.display()))?;
     let total_points: usize = tracks.iter().map(|track| track.track.len() / 3).sum();
     eprintln!(
